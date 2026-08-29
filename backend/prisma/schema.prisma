@@ -1,0 +1,53 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Lead application status
+enum LeadStatus {
+  SUBMITTED
+}
+
+/// Available gold loan schemes offered by Yellow Metal NBFC
+model LoanScheme {
+  id               String   @id // e.g. "PLAN_BULLET_01"
+  name             String
+  description      String
+  baseInterestRate Float    // Annual interest rate in percentage (e.g. 9.5)
+  maxLtvPercent    Float    // Maximum Loan-to-Value ratio, capped at 75% per RBI norms
+  createdAt        DateTime @default(now())
+
+  // Relation: leads that selected this scheme
+  leads Lead[]
+
+  @@map("loan_schemes")
+}
+
+/// A gold loan lead / application submitted through the portal
+model Lead {
+  id                     String     @id @default(uuid())
+  customerName           String
+  mobileNumber           String     // 10-digit Indian mobile number (stored raw, masked on read)
+  grossWeightGrams       Float
+  netWeightGrams         Float
+  purityKarat            Int        // One of: 18, 22, 24
+  selectedPlanId         String
+  pureGoldWeightGrams    Float      // Computed: netWeightGrams * (purityKarat / 24)
+  maxEligibleLoanAmount  Float      // Computed: pureGoldWeight * goldRate * LTV cap
+  status                 LeadStatus @default(SUBMITTED)
+  createdAt              DateTime   @default(now())
+
+  // Relation to the selected loan scheme
+  selectedPlan LoanScheme @relation(fields: [selectedPlanId], references: [id])
+
+  // Composite index for efficient 7-day deduplication check
+  @@index([mobileNumber, createdAt])
+  @@map("leads")
+}
