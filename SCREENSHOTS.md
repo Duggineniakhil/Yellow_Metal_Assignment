@@ -26,3 +26,21 @@ A visual walkthrough of the Yellow Metal Gold Loan Lead Intake Portal.
 ### Validation in Action
 ![Validation Error](screenshots/validation-error.png)
 *Net weight exceeding gross weight is rejected inline before submission.*
+
+## API Duplicate Lead Rejection (409 Conflict)
+
+Below is a raw curl transcript showing the same 7-day deduplication rule being enforced at the API level when a user tries to submit a lead for the same mobile number within the lockout period:
+
+```bash
+curl -X POST localhost:3000/api/v1/leads/submit \
+  -H "Content-Type: application/json" \
+  -d '{"mobileNumber":"9967874532", "customerName":"Rahul", "grossWeightGrams":50, "netWeightGrams":45, "purityKarat":22, "selectedPlanId":"PLAN_BULLET_01"}'
+
+# → 409 Conflict
+# {
+#   "success": false,
+#   "error": "An application from this mobile number was already submitted on August 29, 2026. Please wait 7 days before resubmitting.",
+#   "existingApplicationId": "4880bb6e-...",
+#   "existingSubmittedAt": "2026-08-29T10:00:00.000Z"
+# }
+```
