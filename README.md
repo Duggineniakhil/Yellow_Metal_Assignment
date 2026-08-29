@@ -124,19 +124,20 @@ npx prisma db seed
 
 ### 4. Run the Application
 
-```bash
-# Terminal 1 — Start the backend API server
-cd backend
-npm run dev
-# → Server runs on http://localhost:3000
+The easiest way to run the entire stack is from the root directory:
 
-# Terminal 2 — Start the frontend dev server
-cd frontend
-npm run dev
-# → Frontend runs on http://localhost:5173
+```bash
+# 1. Install all dependencies (root, backend, and frontend)
+npm install
+
+# 2. Start both backend and frontend concurrently
+npm start
 ```
 
-The frontend's Vite dev server proxies `/api/*` requests to the backend automatically.
+- **Frontend:** http://localhost:5173
+- **Backend API:** http://localhost:3000
+
+*The frontend's Vite dev server proxies `/api/*` requests to the backend automatically.*
 
 ### 5. Run Tests
 

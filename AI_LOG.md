@@ -43,32 +43,38 @@ This document records AI tools used, key prompts, and one audited instance of fl
 
 ## Flawed AI Output & Fix
 
-### Issue: Mobile Number Regex — The `/^\d{10}$/` Anti-Pattern
+### Issue: TypeScript Discriminated Union Narrowing Failure
 
-**What happened:** The assignment specification explicitly warned against using the naive regex `/^\d{10}$/` for Indian mobile number validation. This pattern is flawed because it accepts numbers starting with digits 0–5, which are **not valid Indian mobile prefixes** (those ranges are reserved for landlines, toll-free numbers, and special services).
-
-**The audit:** During development, I verified that the generated backend validation (`validation.ts`) and frontend validation (`LeadForm.tsx`) both used the correct regex:
+**What happened:** During the implementation of the `LeadForm.tsx` component, the AI generated the following error-handling block for the API response:
 
 ```typescript
-// ✅ Correct — only accepts numbers starting with 6, 7, 8, or 9
-/^[6-9]\d{9}$/
+const result = await submitLead(payload);
+
+if (result.success) {
+  setSubmitResult(result.data);
+  setStep(4);
+} else if (!result.success) {
+  // TS Error: Property 'status' does not exist on type...
+  if (result.status === 409) { 
+    setSubmitError(result.error.error);
+  }
+}
 ```
 
-If the naive pattern had been used instead:
+**The flaw:** The AI assumed that `else if (!result.success)` would perfectly narrow the discriminated union (`{ success: true; ... } | { success: false; status: number; error: ApiError }`). However, strict TypeScript control-flow analysis failed to recognize `!result.success` as a strict type guard for the false branch, throwing compilation errors about missing `status` and `error` properties.
+
+**The audit & fix:** I audited the IDE logs and noticed the compilation failure. To fix this, I manually replaced the flawed narrowing logic with an exact literal check (`result.success === false`), which satisfied TypeScript's control flow analysis:
 
 ```typescript
-// ❌ Flawed — would accept 0123456789, 5555555555, etc.
-/^\d{10}$/
+// ✅ Correctly narrowed for strict TypeScript environments
+if (result.success) {
+  setSubmitResult(result.data);
+  setStep(4);
+} else if (result.success === false) {
+  if (result.status === 409) { 
+    setSubmitError(result.error.error);
+  }
+}
 ```
 
-...the system would have accepted invalid mobile numbers like `0123456789` or `5000000000`, which are not reachable Indian mobile numbers. This would lead to failed SMS/OTP delivery and polluted lead data.
-
-**The fix applied:** Both the Zod schema in `backend/src/lib/validation.ts` (line ~42) and the client-side `MOBILE_REGEX` constant in `frontend/src/components/LeadForm.tsx` (line ~17) were written from the start with the correct `/^[6-9]\d{9}$/` pattern. The validation error message explicitly states the requirement:
-
-```
-"Mobile number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9."
-```
-
-This was treated as a deliberate audit checkpoint — the kind of "obvious-looking but subtly wrong" pattern that AI code generators are prone to producing if not specifically instructed otherwise.
-
-**Verification:** The backend test can be verified by sending a POST to `/api/v1/leads/submit` with `mobileNumber: "0123456789"` — it correctly returns `400 Bad Request` with the field-level error.
+This manual intervention ensured the frontend compiled cleanly and the correct API error states were rendered to the user.
