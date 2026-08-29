@@ -156,7 +156,7 @@ export default function LeadForm() {
       if (result.success) {
         setSubmitResult(result.data);
         setStep(4);
-      } else {
+      } else if (result.success === false) {
         if (result.status === 409) {
           setSubmitError(result.error.error);
         } else if (result.status === 400) {

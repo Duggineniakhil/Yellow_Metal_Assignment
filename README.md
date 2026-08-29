@@ -98,6 +98,20 @@ cp .env.example .env
 
 ### 3. Initialize the Database
 
+The easiest way to run PostgreSQL without installing it is via Docker. We have included a `docker-compose.yml` for this purpose.
+
+```bash
+# Start a local PostgreSQL instance in the background
+docker compose up -d
+```
+
+Ensure your `backend/.env` file points to this Docker container:
+```env
+DATABASE_URL="postgresql://yellow_user:yellow_password@127.0.0.1:5433/yellow_metal?schema=public"
+```
+
+Now, initialize the database tables and seed data:
+
 ```bash
 cd backend
 
