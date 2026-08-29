@@ -1,26 +1,40 @@
 @import "tailwindcss";
 
+/* ─── Custom Theme Tokens ────────────────────────────────────────────────── */
+
+@theme {
+  /* Yellow Metal Brand Colors */
+  --color-ym-gold: #c5a04e;
+  --color-ym-gold-light: #d4b366;
+  --color-ym-gold-dark: #a68836;
+  --color-ym-gold-50: #fdf8ec;
+  --color-ym-gold-100: #f9edcf;
+  --color-ym-gold-200: #f2d89f;
+  --color-ym-cream: #faf7f0;
+  --color-ym-cream-dark: #f5f0e4;
+  --color-ym-warm-white: #fffdf8;
+  --color-ym-charcoal: #1a1a1a;
+  --color-ym-text: #2d2a26;
+  --color-ym-text-secondary: #6b6560;
+  --color-ym-border: #e8e2d6;
+  --color-ym-border-light: #f0ece3;
+  --color-ym-success: #2e7d52;
+  --color-ym-error: #c53030;
+}
+
 /* ─── Base Reset & Typography ────────────────────────────────────────────── */
 
 @layer base {
   body {
-    @apply bg-gray-950 text-white antialiased;
+    @apply bg-ym-cream text-ym-text antialiased;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 
-  /* Custom scrollbar for dark theme */
-  ::-webkit-scrollbar {
-    width: 8px;
-  }
-  ::-webkit-scrollbar-track {
-    @apply bg-gray-900;
-  }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-gray-700 rounded-full;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-600;
-  }
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-ym-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-ym-text-secondary; }
 
   /* Remove default number input spinners */
   input[type="number"]::-webkit-inner-spin-button,
@@ -34,10 +48,135 @@
 
   /* Custom select arrow */
   select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b6560' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 0.75rem center;
     background-repeat: no-repeat;
     background-size: 1.25em 1.25em;
     padding-right: 2.5rem;
   }
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────────── */
+
+@layer utilities {
+  .animate-fade-up {
+    animation: fadeUp 0.5s ease-out both;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out both;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out both;
+  }
+
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-ym-gold-50) 0%,
+      var(--color-ym-gold-200) 50%,
+      var(--color-ym-gold-50) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2.5s ease-in-out infinite;
+  }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─── Gold decorative line ───────────────────────────────────────────────── */
+
+.ym-gold-line {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--color-ym-gold) 20%,
+    var(--color-ym-gold-light) 50%,
+    var(--color-ym-gold) 80%,
+    transparent 100%
+  );
+  border-radius: 2px;
+}
+
+/* ─── Premium card container ─────────────────────────────────────────────── */
+
+.ym-card {
+  background: white;
+  border: 1px solid var(--color-ym-border-light);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.04),
+    0 8px 24px rgba(0,0,0,0.04);
+  transition: box-shadow 0.3s ease;
+}
+
+.ym-card:hover {
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.04),
+    0 12px 32px rgba(0,0,0,0.06);
+}
+
+/* Gold-accented card for the main form */
+.ym-card-gold {
+  background: white;
+  border: 1.5px solid var(--color-ym-gold-200);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 1px 3px rgba(197, 160, 78, 0.06),
+    0 8px 32px rgba(197, 160, 78, 0.08);
+}
+
+/* ─── Premium input styling ──────────────────────────────────────────────── */
+
+.ym-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: var(--color-ym-cream);
+  border: 1.5px solid var(--color-ym-border);
+  border-radius: 0.75rem;
+  color: var(--color-ym-text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.ym-input::placeholder {
+  color: var(--color-ym-text-secondary);
+  font-weight: 400;
+}
+
+.ym-input:focus {
+  border-color: var(--color-ym-gold);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(197, 160, 78, 0.12);
+}
+
+.ym-input--error {
+  border-color: var(--color-ym-error);
+}
+
+.ym-input--error:focus {
+  border-color: var(--color-ym-error);
+  box-shadow: 0 0 0 3px rgba(197, 48, 48, 0.1);
 }

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Dark circle background -->
+  <circle cx="100" cy="100" r="90" fill="#2d2d2d"/>
+  <!-- Gold Y geometric mark — three converging bars -->
+  <!-- Top-left bar -->
+  <path d="M65 55 L95 95 L85 100 L55 62Z" fill="#d4a843"/>
+  <!-- Top-right bar -->
+  <path d="M135 55 L105 95 L115 100 L145 62Z" fill="#d4a843"/>
+  <!-- Bottom center bar -->
+  <path d="M95 95 L105 95 L105 148 L95 148Z" fill="#d4a843"/>
+  <!-- Connecting center piece -->
+  <path d="M85 100 L100 108 L115 100 L105 95 L95 95Z" fill="#d4a843"/>
+</svg>

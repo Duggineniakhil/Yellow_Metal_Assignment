@@ -9,11 +9,6 @@ import { calculateLoanPreview } from "../lib/loanCalculator";
 
 // ─── Validation Helpers ──────────────────────────────────────────────────────
 
-/**
- * Indian mobile number regex — must start with 6-9, exactly 10 digits.
- * We do NOT use /^\d{10}$/ because that accepts numbers starting with 0-5,
- * which are not valid Indian mobile prefixes.
- */
 const MOBILE_REGEX = /^[6-9]\d{9}$/;
 
 interface FormData {
@@ -55,7 +50,6 @@ export default function LeadForm() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [apiFieldErrors, setApiFieldErrors] = useState<Record<string, string>>({});
 
-  // Fetch loan schemes on mount
   useEffect(() => {
     fetchLoanSchemes()
       .then(setSchemes)
@@ -67,14 +61,12 @@ export default function LeadForm() {
   function validateStep1(): FormErrors {
     const errs: FormErrors = {};
 
-    if (!form.customerName.trim()) {
-      errs.customerName = "Customer name is required.";
-    }
+    if (!form.customerName.trim()) errs.customerName = "Full name is required.";
 
     if (!form.mobileNumber.trim()) {
       errs.mobileNumber = "Mobile number is required.";
     } else if (!MOBILE_REGEX.test(form.mobileNumber)) {
-      errs.mobileNumber = "Enter a valid 10-digit Indian mobile number (starts with 6-9).";
+      errs.mobileNumber = "Enter a valid 10-digit Indian mobile number.";
     }
 
     const gross = parseFloat(form.grossWeightGrams);
@@ -90,42 +82,37 @@ export default function LeadForm() {
       errs.netWeightGrams = "Net weight cannot exceed gross weight.";
     }
 
-    if (!form.purityKarat) {
-      errs.purityKarat = "Please select gold purity.";
-    }
+    if (!form.purityKarat) errs.purityKarat = "Please select gold purity.";
 
     return errs;
   }
 
-  // ── Live Calculator Preview ────────────────────────────────────────────────
+  // ── Live Calculator Previews ───────────────────────────────────────────────
 
   const selectedScheme = schemes.find((s) => s.id === form.selectedPlanId);
 
-  const loanPreview = useMemo(() => {
-    const net = parseFloat(form.netWeightGrams);
-    const karat = parseInt(form.purityKarat);
-    if (!net || !karat || !selectedScheme) return null;
-    if (net <= 0 || ![18, 22, 24].includes(karat)) return null;
-    return calculateLoanPreview(net, karat, selectedScheme.maxLtvPercent);
-  }, [form.netWeightGrams, form.purityKarat, selectedScheme]);
-
-  // Preview without scheme selection (use 75% LTV for generic preview)
   const genericPreview = useMemo(() => {
     const net = parseFloat(form.netWeightGrams);
     const karat = parseInt(form.purityKarat);
-    if (!net || !karat) return null;
-    if (net <= 0 || ![18, 22, 24].includes(karat)) return null;
+    if (!net || !karat || net <= 0 || ![18, 22, 24].includes(karat)) return null;
     return calculateLoanPreview(net, karat, 75);
   }, [form.netWeightGrams, form.purityKarat]);
+
+  const activePreview = useMemo(() => {
+    if (step > 1 && selectedScheme) {
+      const net = parseFloat(form.netWeightGrams);
+      const karat = parseInt(form.purityKarat);
+      if (!net || !karat || net <= 0 || ![18, 22, 24].includes(karat)) return null;
+      return calculateLoanPreview(net, karat, selectedScheme.maxLtvPercent);
+    }
+    return genericPreview;
+  }, [step, selectedScheme, genericPreview, form.netWeightGrams, form.purityKarat]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   function handleChange(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
-    // Clear errors as user types
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    }
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
     if (apiFieldErrors[field]) {
       setApiFieldErrors((prev) => {
         const copy = { ...prev };
@@ -138,18 +125,12 @@ export default function LeadForm() {
   function handleNext() {
     const errs = validateStep1();
     setErrors(errs);
-    if (Object.keys(errs).length === 0) {
-      setStep(2);
-    }
-  }
-
-  function handleSelectScheme(schemeId: string) {
-    handleChange("selectedPlanId", schemeId);
+    if (Object.keys(errs).length === 0) setStep(2);
   }
 
   function handleProceedToSubmit() {
     if (!form.selectedPlanId) {
-      setErrors((prev) => ({ ...prev, selectedPlanId: "Please select a loan scheme." }));
+      setErrors((prev) => ({ ...prev, selectedPlanId: "Please select a loan plan." }));
       return;
     }
     setStep(3);
@@ -174,7 +155,7 @@ export default function LeadForm() {
 
       if (result.success) {
         setSubmitResult(result.data);
-        setStep(4); // Confirmation screen
+        setStep(4);
       } else {
         if (result.status === 409) {
           setSubmitError(result.error.error);
@@ -182,12 +163,8 @@ export default function LeadForm() {
           setSubmitError(result.error.error);
           if (result.error.fieldErrors) {
             setApiFieldErrors(result.error.fieldErrors);
-            // If there are field errors from Step 1 fields, go back to Step 1
             const step1Fields = ["customerName", "mobileNumber", "grossWeightGrams", "netWeightGrams", "purityKarat"];
-            const hasStep1Errors = Object.keys(result.error.fieldErrors).some((f) =>
-              step1Fields.includes(f)
-            );
-            if (hasStep1Errors) setStep(1);
+            if (Object.keys(result.error.fieldErrors).some((f) => step1Fields.includes(f))) setStep(1);
           }
         } else {
           setSubmitError(result.error.error || "An unexpected error occurred.");
@@ -209,453 +186,426 @@ export default function LeadForm() {
     setStep(1);
   }
 
-  // ── Format Helpers ─────────────────────────────────────────────────────────
+  const formatCurrencyWithoutSymbol = (val: number) =>
+    new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(val);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(val);
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
+
+  const getError = (field: keyof FormData) => errors[field] || apiFieldErrors[field];
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Step Indicator */}
+    <div className="w-full">
+      {/* ── Step Indicator (Horizontal Line) ── */}
       {step < 4 && (
-        <div className="flex items-center justify-center mb-8 gap-2">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="flex items-center">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
-                  step >= s
-                    ? "bg-gradient-to-r from-amber-500 to-yellow-400 text-gray-900 shadow-lg shadow-amber-500/30"
-                    : "bg-gray-800 text-gray-500 border border-gray-700"
-                }`}
-              >
-                {s}
-              </div>
-              {s < 3 && (
-                <div
-                  className={`w-16 h-0.5 mx-1 transition-all duration-300 ${
-                    step > s ? "bg-amber-500" : "bg-gray-700"
-                  }`}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Step 1: Customer & Gold Details ──────────────────────────────── */}
-      {step === 1 && (
-        <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-800 shadow-2xl">
-          <h2 className="text-2xl font-bold text-white mb-1">Customer & Gold Details</h2>
-          <p className="text-gray-400 mb-6 text-sm">Enter borrower information and gold collateral details.</p>
-
-          <div className="space-y-5">
-            {/* Customer Name */}
-            <div>
-              <label htmlFor="customerName" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Customer Name
-              </label>
-              <input
-                id="customerName"
-                type="text"
-                value={form.customerName}
-                onChange={(e) => handleChange("customerName", e.target.value)}
-                placeholder="e.g. Rahul Sharma"
-                className={`w-full px-4 py-3 bg-gray-800/60 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${
-                  errors.customerName || apiFieldErrors.customerName
-                    ? "border-red-500 focus:ring-red-500/50"
-                    : "border-gray-700 focus:ring-amber-500/50 focus:border-amber-500"
-                }`}
-              />
-              {(errors.customerName || apiFieldErrors.customerName) && (
-                <p className="mt-1 text-sm text-red-400">{errors.customerName || apiFieldErrors.customerName}</p>
-              )}
-            </div>
-
-            {/* Mobile Number */}
-            <div>
-              <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Mobile Number
-              </label>
-              <input
-                id="mobileNumber"
-                type="tel"
-                maxLength={10}
-                value={form.mobileNumber}
-                onChange={(e) => handleChange("mobileNumber", e.target.value.replace(/\D/g, ""))}
-                placeholder="e.g. 9876543210"
-                className={`w-full px-4 py-3 bg-gray-800/60 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${
-                  errors.mobileNumber || apiFieldErrors.mobileNumber
-                    ? "border-red-500 focus:ring-red-500/50"
-                    : "border-gray-700 focus:ring-amber-500/50 focus:border-amber-500"
-                }`}
-              />
-              {(errors.mobileNumber || apiFieldErrors.mobileNumber) && (
-                <p className="mt-1 text-sm text-red-400">{errors.mobileNumber || apiFieldErrors.mobileNumber}</p>
-              )}
-            </div>
-
-            {/* Weight Fields - Side by Side */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="grossWeight" className="block text-sm font-medium text-gray-300 mb-1.5">
-                  Gross Weight (g)
-                </label>
-                <input
-                  id="grossWeight"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.grossWeightGrams}
-                  onChange={(e) => handleChange("grossWeightGrams", e.target.value)}
-                  placeholder="e.g. 50"
-                  className={`w-full px-4 py-3 bg-gray-800/60 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${
-                    errors.grossWeightGrams || apiFieldErrors.grossWeightGrams
-                      ? "border-red-500 focus:ring-red-500/50"
-                      : "border-gray-700 focus:ring-amber-500/50 focus:border-amber-500"
-                  }`}
-                />
-                {(errors.grossWeightGrams || apiFieldErrors.grossWeightGrams) && (
-                  <p className="mt-1 text-sm text-red-400">{errors.grossWeightGrams || apiFieldErrors.grossWeightGrams}</p>
-                )}
-              </div>
-              <div>
-                <label htmlFor="netWeight" className="block text-sm font-medium text-gray-300 mb-1.5">
-                  Net Weight (g)
-                </label>
-                <input
-                  id="netWeight"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.netWeightGrams}
-                  onChange={(e) => handleChange("netWeightGrams", e.target.value)}
-                  placeholder="e.g. 45"
-                  className={`w-full px-4 py-3 bg-gray-800/60 border rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 transition-all ${
-                    errors.netWeightGrams || apiFieldErrors.netWeightGrams
-                      ? "border-red-500 focus:ring-red-500/50"
-                      : "border-gray-700 focus:ring-amber-500/50 focus:border-amber-500"
-                  }`}
-                />
-                {(errors.netWeightGrams || apiFieldErrors.netWeightGrams) && (
-                  <p className="mt-1 text-sm text-red-400">{errors.netWeightGrams || apiFieldErrors.netWeightGrams}</p>
-                )}
-              </div>
-            </div>
-
-            {/* Purity Dropdown */}
-            <div>
-              <label htmlFor="purityKarat" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Gold Purity
-              </label>
-              <select
-                id="purityKarat"
-                value={form.purityKarat}
-                onChange={(e) => handleChange("purityKarat", e.target.value)}
-                className={`w-full px-4 py-3 bg-gray-800/60 border rounded-xl text-white focus:outline-none focus:ring-2 transition-all appearance-none cursor-pointer ${
-                  errors.purityKarat || apiFieldErrors.purityKarat
-                    ? "border-red-500 focus:ring-red-500/50"
-                    : "border-gray-700 focus:ring-amber-500/50 focus:border-amber-500"
-                } ${!form.purityKarat ? "text-gray-500" : ""}`}
-              >
-                <option value="" disabled>Select purity</option>
-                <option value="18">18 Karat (75% pure)</option>
-                <option value="22">22 Karat (91.67% pure)</option>
-                <option value="24">24 Karat (99.9% pure)</option>
-              </select>
-              {(errors.purityKarat || apiFieldErrors.purityKarat) && (
-                <p className="mt-1 text-sm text-red-400">{errors.purityKarat || apiFieldErrors.purityKarat}</p>
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={handleNext}
-            className="mt-8 w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-gray-900 font-bold rounded-xl hover:from-amber-400 hover:to-yellow-300 transition-all duration-200 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 active:scale-[0.98]"
-          >
-            Continue to Loan Calculator →
-          </button>
-        </div>
-      )}
-
-      {/* ── Step 2: Loan Calculator & Scheme Selection ───────────────────── */}
-      {step === 2 && (
-        <div className="space-y-6">
-          {/* Live Calculation Preview */}
-          <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-800 shadow-2xl">
-            <h2 className="text-2xl font-bold text-white mb-1">Loan Calculator</h2>
-            <p className="text-gray-400 mb-6 text-sm">
-              Live preview — select a loan scheme below to see your eligible amount.
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Net Gold Weight</p>
-                <p className="text-xl font-bold text-white">
-                  {parseFloat(form.netWeightGrams) || 0}g
-                </p>
-              </div>
-              <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Purity</p>
-                <p className="text-xl font-bold text-white">
-                  {form.purityKarat}K ({((parseInt(form.purityKarat) / 24) * 100).toFixed(1)}%)
-                </p>
-              </div>
-              <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Pure Gold Weight</p>
-                <p className="text-xl font-bold text-amber-400">
-                  {genericPreview ? `${genericPreview.pureGoldWeightGrams.toFixed(2)}g` : "—"}
-                </p>
-              </div>
-              <div className="bg-gray-800/60 rounded-xl p-4 border border-gray-700">
-                <p className="text-xs text-gray-400 uppercase tracking-wider mb-1">Gold Market Value</p>
-                <p className="text-xl font-bold text-amber-400">
-                  {genericPreview ? formatCurrency(genericPreview.goldMarketValue) : "—"}
-                </p>
-              </div>
-            </div>
-
-            {loanPreview && selectedScheme && (
-              <div className="bg-gradient-to-r from-amber-500/10 to-yellow-400/10 border border-amber-500/30 rounded-xl p-5 mt-4">
-                <p className="text-sm text-amber-300/80 mb-1">Maximum Eligible Loan Amount</p>
-                <p className="text-3xl font-black text-amber-400">
-                  {formatCurrency(loanPreview.maxEligibleLoanAmount)}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  at {loanPreview.effectiveLtvPercent}% LTV via {selectedScheme.name}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Scheme Selection Cards */}
-          <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-800 shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4">Select Loan Scheme</h3>
-            {errors.selectedPlanId && (
-              <p className="mb-3 text-sm text-red-400">{errors.selectedPlanId}</p>
-            )}
-            <div className="space-y-4">
-              {schemes.map((scheme) => {
-                const isSelected = form.selectedPlanId === scheme.id;
-                const preview = genericPreview
-                  ? calculateLoanPreview(
-                      parseFloat(form.netWeightGrams),
-                      parseInt(form.purityKarat),
-                      scheme.maxLtvPercent
-                    )
-                  : null;
-
-                return (
-                  <button
-                    key={scheme.id}
-                    onClick={() => handleSelectScheme(scheme.id)}
-                    className={`w-full text-left p-5 rounded-xl border-2 transition-all duration-200 ${
-                      isSelected
-                        ? "border-amber-500 bg-amber-500/10 shadow-lg shadow-amber-500/10"
-                        : "border-gray-700 bg-gray-800/40 hover:border-gray-600 hover:bg-gray-800/60"
+        <div className="flex items-center justify-center mb-16 overflow-x-auto pb-4 max-w-2xl mx-auto">
+          {[
+            { n: 1, label: "Your details" },
+            { n: 2, label: "Choose a plan" },
+            { n: 3, label: "Confirmation" },
+          ].map(({ n, label }, idx) => {
+            const isActive = step === n;
+            const isPast = step > n;
+            return (
+              <div key={n} className="flex items-center shrink-0">
+                <div className="flex items-center gap-4">
+                  <div
+                    className={`w-8 h-8 flex items-center justify-center text-xs font-bold transition-all border ${
+                      isActive || isPast
+                        ? "bg-[#cba344] text-white border-[#cba344]"
+                        : "bg-transparent text-gray-400 border-gray-300"
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <div
-                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                              isSelected ? "border-amber-500 bg-amber-500" : "border-gray-500"
-                            }`}
-                          >
-                            {isSelected && (
-                              <svg className="w-3 h-3 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                              </svg>
-                            )}
-                          </div>
-                          <h4 className="text-lg font-bold text-white">{scheme.name}</h4>
-                        </div>
-                        <p className="text-sm text-gray-400 ml-8 mb-3">{scheme.description}</p>
-                        <div className="flex gap-6 ml-8">
-                          <div>
-                            <span className="text-xs text-gray-500 uppercase">Interest Rate</span>
-                            <p className="text-sm font-semibold text-white">{scheme.baseInterestRate}% p.a.</p>
-                          </div>
-                          <div>
-                            <span className="text-xs text-gray-500 uppercase">Max LTV</span>
-                            <p className="text-sm font-semibold text-white">{scheme.maxLtvPercent}%</p>
-                          </div>
-                          {preview && (
-                            <div>
-                              <span className="text-xs text-gray-500 uppercase">Eligible Loan</span>
-                              <p className="text-sm font-semibold text-amber-400">
-                                {formatCurrency(preview.maxEligibleLoanAmount)}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => setStep(1)}
-                className="flex-1 py-3.5 bg-gray-800 text-gray-300 font-semibold rounded-xl border border-gray-700 hover:bg-gray-700 transition-all"
-              >
-                ← Back
-              </button>
-              <button
-                onClick={handleProceedToSubmit}
-                disabled={!form.selectedPlanId}
-                className="flex-1 py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-gray-900 font-bold rounded-xl hover:from-amber-400 hover:to-yellow-300 transition-all duration-200 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
-              >
-                Review & Submit →
-              </button>
-            </div>
-          </div>
+                    0{n}
+                  </div>
+                  <span
+                    className={`text-[13px] tracking-wide ${
+                      isActive || isPast ? "text-gray-800 font-bold" : "text-gray-400 font-medium"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+                {idx < 2 && <div className="w-16 h-[1px] bg-gray-200 mx-4"></div>}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* ── Step 3: Review & Submit ──────────────────────────────────────── */}
-      {step === 3 && loanPreview && selectedScheme && (
-        <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-800 shadow-2xl">
-          <h2 className="text-2xl font-bold text-white mb-1">Review Application</h2>
-          <p className="text-gray-400 mb-6 text-sm">Verify your details before submitting.</p>
+      {/* ── 2-Column Layout ── */}
+      <div className="flex flex-col lg:flex-row gap-16 items-start">
+        
+        {/* Left Column: Form Steps */}
+        <div className="flex-1 w-full min-w-0">
+          
+          {/* STEP 1: Details */}
+          {step === 1 && (
+            <div className="animate-fade-in">
+              <p className="text-[#cba344] text-[10px] font-bold uppercase tracking-widest mb-3">
+                STEP 01 / YOUR DETAILS
+              </p>
+              <h2 className="font-serif text-5xl font-semibold text-[#1a1a1a] tracking-tight mb-4" style={{ fontFamily: 'Georgia, serif' }}>
+                Begin with your gold.
+              </h2>
+              <p className="text-gray-500 mb-10 text-[15px] leading-relaxed max-w-md">
+                Tell us a little about yourself and the gold you'd like to pledge. It takes less than two minutes.
+              </p>
 
-          <div className="space-y-4 mb-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Customer</p>
-                <p className="text-white font-medium">{form.customerName}</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="customerName" className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                    FULL NAME
+                  </label>
+                  <input
+                    id="customerName"
+                    type="text"
+                    value={form.customerName}
+                    onChange={(e) => handleChange("customerName", e.target.value)}
+                    placeholder="e.g. Ananya Sharma"
+                    className={`w-full border border-gray-200 p-3.5 rounded-sm text-sm outline-none focus:border-[#cba344] focus:ring-1 focus:ring-[#cba344] transition-all bg-white ${
+                      getError("customerName") ? "border-red-500" : ""
+                    }`}
+                  />
+                  {getError("customerName") && (
+                    <p className="mt-1.5 text-xs text-red-500 font-medium">{getError("customerName")}</p>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="mobileNumber" className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                    MOBILE NUMBER
+                  </label>
+                  <input
+                    id="mobileNumber"
+                    type="tel"
+                    maxLength={10}
+                    value={form.mobileNumber}
+                    onChange={(e) => handleChange("mobileNumber", e.target.value.replace(/\D/g, ""))}
+                    placeholder="10-digit mobile number"
+                    className={`w-full border border-gray-200 p-3.5 rounded-sm text-sm outline-none focus:border-[#cba344] focus:ring-1 focus:ring-[#cba344] transition-all bg-white ${
+                      getError("mobileNumber") ? "border-red-500" : ""
+                    }`}
+                  />
+                  {getError("mobileNumber") && (
+                    <p className="mt-1.5 text-xs text-red-500 font-medium">{getError("mobileNumber")}</p>
+                  )}
+                </div>
               </div>
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Mobile</p>
-                <p className="text-white font-medium">{form.mobileNumber}</p>
+
+              <div className="border-t border-gray-200 my-8"></div>
+              
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6">GOLD DETAILS</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label htmlFor="grossWeight" className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                    GROSS WEIGHT (GRAMS)
+                  </label>
+                  <input
+                    id="grossWeight"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.grossWeightGrams}
+                    onChange={(e) => handleChange("grossWeightGrams", e.target.value)}
+                    placeholder="0.00"
+                    className={`w-full border border-gray-200 p-3.5 rounded-sm text-sm outline-none focus:border-[#cba344] focus:ring-1 focus:ring-[#cba344] transition-all bg-white ${
+                      getError("grossWeightGrams") ? "border-red-500" : ""
+                    }`}
+                  />
+                  {getError("grossWeightGrams") && (
+                    <p className="mt-1.5 text-xs text-red-500 font-medium">{getError("grossWeightGrams")}</p>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="netWeight" className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                    NET WEIGHT (GRAMS)
+                  </label>
+                  <input
+                    id="netWeight"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.netWeightGrams}
+                    onChange={(e) => handleChange("netWeightGrams", e.target.value)}
+                    placeholder="0.00"
+                    className={`w-full border border-gray-200 p-3.5 rounded-sm text-sm outline-none focus:border-[#cba344] focus:ring-1 focus:ring-[#cba344] transition-all bg-white ${
+                      getError("netWeightGrams") ? "border-red-500" : ""
+                    }`}
+                  />
+                  {getError("netWeightGrams") && (
+                    <p className="mt-1.5 text-xs text-red-500 font-medium">{getError("netWeightGrams")}</p>
+                  )}
+                </div>
               </div>
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Gross Weight</p>
-                <p className="text-white font-medium">{form.grossWeightGrams}g</p>
+
+              <div className="mt-6">
+                <label htmlFor="purityKarat" className="block text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2">
+                  PURITY
+                </label>
+                <select
+                  id="purityKarat"
+                  value={form.purityKarat}
+                  onChange={(e) => handleChange("purityKarat", e.target.value)}
+                  className={`w-full border border-gray-200 p-3.5 rounded-sm text-sm outline-none focus:border-[#cba344] focus:ring-1 focus:ring-[#cba344] transition-all bg-white appearance-none ${
+                    getError("purityKarat") ? "border-red-500" : ""
+                  }`}
+                >
+                  <option value="" disabled>Select purity</option>
+                  <option value="24">24 Karat</option>
+                  <option value="22">22 Karat</option>
+                  <option value="18">18 Karat</option>
+                </select>
+                {getError("purityKarat") && (
+                  <p className="mt-1.5 text-xs text-red-500 font-medium">{getError("purityKarat")}</p>
+                )}
               </div>
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Net Weight</p>
-                <p className="text-white font-medium">{form.netWeightGrams}g</p>
+
+              <button
+                onClick={handleNext}
+                className="mt-10 bg-[#cba344] text-white font-bold py-3.5 px-8 rounded-sm hover:bg-[#b58f38] transition-colors flex items-center gap-2"
+              >
+                Continue to plans →
+              </button>
+            </div>
+          )}
+
+          {/* STEP 2: Choose Plan */}
+          {step === 2 && (
+            <div className="animate-fade-in">
+              <p className="text-[#cba344] text-[10px] font-bold uppercase tracking-widest mb-3">
+                STEP 02 / CHOOSE A PLAN
+              </p>
+              <h2 className="font-serif text-5xl font-semibold text-[#1a1a1a] tracking-tight mb-4" style={{ fontFamily: 'Georgia, serif' }}>
+                Select your scheme.
+              </h2>
+              <p className="text-gray-500 mb-10 text-[15px] leading-relaxed max-w-md">
+                Choose a repayment plan that fits your financial needs perfectly.
+              </p>
+
+              {getError("selectedPlanId") && (
+                <p className="mb-4 text-xs text-red-500 font-medium">{getError("selectedPlanId")}</p>
+              )}
+
+              <div className="space-y-4">
+                {schemes.map((scheme) => {
+                  const isSelected = form.selectedPlanId === scheme.id;
+                  return (
+                    <button
+                      key={scheme.id}
+                      onClick={() => handleChange("selectedPlanId", scheme.id)}
+                      className={`w-full text-left p-6 rounded-sm border transition-all duration-200 flex items-start gap-4 ${
+                        isSelected
+                          ? "border-[#cba344] bg-[#fbf8ef]"
+                          : "border-gray-200 bg-white hover:border-[#cba344]/50"
+                      }`}
+                    >
+                      {/* Checkbox / Radio indicator */}
+                      <div className={`mt-0.5 w-5 h-5 rounded-sm border flex items-center justify-center shrink-0 ${
+                        isSelected ? "bg-[#cba344] border-[#cba344]" : "border-gray-300"
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1">
+                        <h4 className="text-lg font-bold text-gray-900">{scheme.name}</h4>
+                        <p className="text-sm text-gray-500 mt-1">{scheme.description}</p>
+                        
+                        <div className="flex gap-8 mt-4">
+                          <div>
+                            <span className="block text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">Interest</span>
+                            <span className="text-sm font-semibold text-gray-800">{scheme.baseInterestRate}% p.a.</span>
+                          </div>
+                          <div>
+                            <span className="block text-[10px] text-gray-400 uppercase font-bold tracking-wider mb-1">Max LTV</span>
+                            <span className="text-sm font-semibold text-gray-800">{scheme.maxLtvPercent}%</span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Purity</p>
-                <p className="text-white font-medium">{form.purityKarat}K</p>
-              </div>
-              <div className="bg-gray-800/60 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Pure Gold</p>
-                <p className="text-amber-400 font-medium">{loanPreview.pureGoldWeightGrams.toFixed(2)}g</p>
+
+              <div className="flex gap-4 mt-10">
+                <button
+                  onClick={() => setStep(1)}
+                  className="py-3.5 px-8 bg-transparent text-gray-600 border border-gray-300 font-bold rounded-sm hover:bg-white transition-colors"
+                >
+                  ← Back
+                </button>
+                <button
+                  onClick={handleProceedToSubmit}
+                  disabled={!form.selectedPlanId}
+                  className="bg-[#cba344] text-white font-bold py-3.5 px-8 rounded-sm hover:bg-[#b58f38] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Review Application →
+                </button>
               </div>
             </div>
+          )}
 
-            <div className="bg-gradient-to-r from-amber-500/10 to-yellow-400/10 border border-amber-500/30 rounded-xl p-5">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-amber-300/80">Selected Plan</span>
-                <span className="text-white font-semibold">{selectedScheme.name}</span>
+          {/* STEP 3: Submit */}
+          {step === 3 && activePreview && selectedScheme && (
+            <div className="animate-fade-in">
+              <p className="text-[#cba344] text-[10px] font-bold uppercase tracking-widest mb-3">
+                STEP 03 / CONFIRMATION
+              </p>
+              <h2 className="font-serif text-5xl font-semibold text-[#1a1a1a] tracking-tight mb-4" style={{ fontFamily: 'Georgia, serif' }}>
+                Review details.
+              </h2>
+              <p className="text-gray-500 mb-10 text-[15px] leading-relaxed max-w-md">
+                Please verify your details below before final submission.
+              </p>
+
+              <div className="grid grid-cols-2 gap-x-8 gap-y-6 mb-10 border border-gray-200 bg-white p-6 rounded-sm">
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Customer</p>
+                  <p className="text-sm font-medium text-gray-900">{form.customerName}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Mobile</p>
+                  <p className="text-sm font-medium text-gray-900">+91 {form.mobileNumber}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Gold Details</p>
+                  <p className="text-sm font-medium text-gray-900">{form.grossWeightGrams}g Gross · {form.purityKarat}K</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Selected Plan</p>
+                  <p className="text-sm font-medium text-gray-900">{selectedScheme.name}</p>
+                </div>
               </div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-amber-300/80">Interest Rate</span>
-                <span className="text-white font-semibold">{selectedScheme.baseInterestRate}% p.a.</span>
+
+              {submitError && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-sm">
+                  <p className="text-red-600 text-sm font-medium">{submitError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setStep(2)}
+                  disabled={submitting}
+                  className="py-3.5 px-8 bg-transparent text-gray-600 border border-gray-300 font-bold rounded-sm hover:bg-white transition-colors disabled:opacity-50"
+                >
+                  ← Back
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="bg-[#cba344] text-white font-bold py-3.5 px-8 rounded-sm hover:bg-[#b58f38] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? "Submitting..." : "Submit Application ✓"}
+                </button>
               </div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-amber-300/80">LTV Applied</span>
-                <span className="text-white font-semibold">{loanPreview.effectiveLtvPercent}%</span>
+            </div>
+          )}
+
+          {/* STEP 4: Success */}
+          {step === 4 && submitResult && (
+            <div className="animate-fade-in text-center py-10">
+              <div className="w-20 h-20 bg-[#cba344]/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg className="w-10 h-10 text-[#cba344]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
-              <hr className="border-amber-500/20 my-3" />
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-amber-300">Max Eligible Loan</span>
-                <span className="text-2xl font-black text-amber-400">
-                  {formatCurrency(loanPreview.maxEligibleLoanAmount)}
+              <h2 className="font-serif text-5xl font-semibold text-[#1a1a1a] tracking-tight mb-4" style={{ fontFamily: 'Georgia, serif' }}>
+                Application Received.
+              </h2>
+              <p className="text-gray-500 mb-8 max-w-md mx-auto leading-relaxed">
+                Your loan application has been successfully recorded. An executive will contact you shortly to arrange a physical valuation.
+              </p>
+
+              <div className="bg-white border border-gray-200 p-6 rounded-sm text-left max-w-sm mx-auto mb-10">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs text-gray-500 uppercase tracking-widest font-bold">App ID</span>
+                  <span className="text-sm font-mono font-bold text-gray-800">{submitResult.applicationId.slice(0, 8)}</span>
+                </div>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs text-gray-500 uppercase tracking-widest font-bold">Eligible Loan</span>
+                  <span className="text-lg font-black text-[#cba344]">{formatCurrency(submitResult.maxEligibleLoanAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500 uppercase tracking-widest font-bold">Plan</span>
+                  <span className="text-sm font-medium text-gray-800">{submitResult.selectedPlan.name}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleNewApplication}
+                className="bg-gray-900 text-white font-bold py-3.5 px-8 rounded-sm hover:bg-black transition-colors"
+              >
+                Start New Application
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Live Estimate Sidebar (hidden on step 4) */}
+        {step < 4 && (
+          <div className="w-full lg:w-[380px] shrink-0 sticky top-24">
+            <div className="bg-[#181c1a] text-white p-8 rounded-sm relative overflow-hidden shadow-2xl">
+              
+              {/* Decorative arc in top right corner */}
+              <div className="absolute -top-16 -right-16 w-40 h-40 border border-[#cba344]/30 rounded-full"></div>
+              
+              <div className="flex justify-between items-start mb-8 relative z-10">
+                <p className="text-[#cba344] text-[10px] font-bold uppercase tracking-widest">
+                  LIVE ESTIMATE
+                </p>
+                <span className="text-[#cba344] text-lg leading-none">✧</span>
+              </div>
+              
+              <div className="mb-10 relative z-10">
+                <p className="text-[42px] font-serif font-medium text-white flex items-center leading-none tracking-tight mb-2" style={{ fontFamily: 'Georgia, serif' }}>
+                  <span className="text-[#cba344] text-3xl mr-1 font-sans">₹</span>
+                  {activePreview ? formatCurrencyWithoutSymbol(activePreview.maxEligibleLoanAmount) : '0'}
+                </p>
+                <p className="text-[11px] text-gray-400 font-medium">Maximum eligible loan amount</p>
+              </div>
+              
+              <div className="border-t border-gray-700/50 my-6 relative z-10"></div>
+              
+              <div className="space-y-4 relative z-10">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Pure gold weight</span>
+                  <span className="font-bold text-white tracking-wide">
+                    {activePreview ? activePreview.pureGoldWeightGrams.toFixed(2) : '0.00'} g
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Gold rate</span>
+                  <span className="font-bold text-white tracking-wide">₹6,200 / g</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">LTV cap</span>
+                  <span className="font-bold text-white tracking-wide">
+                    {activePreview ? activePreview.effectiveLtvPercent : '75'}%
+                  </span>
+                </div>
+              </div>
+              
+              <div className="border-t border-gray-700/50 my-6 relative z-10"></div>
+              
+              <div className="flex items-start gap-2.5 relative z-10">
+                <svg className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-[10px] text-gray-400 leading-relaxed font-medium">
+                  Final amount confirmed after verification
                 </span>
               </div>
             </div>
           </div>
-
-          {/* Error Messages */}
-          {submitError && (
-            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
-              <p className="text-red-400 text-sm font-medium">{submitError}</p>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep(2)}
-              disabled={submitting}
-              className="flex-1 py-3.5 bg-gray-800 text-gray-300 font-semibold rounded-xl border border-gray-700 hover:bg-gray-700 transition-all disabled:opacity-50"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="flex-1 py-3.5 bg-gradient-to-r from-emerald-500 to-green-400 text-white font-bold rounded-xl hover:from-emerald-400 hover:to-green-300 transition-all duration-200 shadow-lg shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Submitting...
-                </>
-              ) : (
-                "Submit Application ✓"
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Step 4: Confirmation ─────────────────────────────────────────── */}
-      {step === 4 && submitResult && (
-        <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl p-8 border border-gray-800 shadow-2xl text-center">
-          <div className="w-20 h-20 bg-gradient-to-r from-emerald-500 to-green-400 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-emerald-500/30">
-            <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
-
-          <h2 className="text-2xl font-bold text-white mb-2">Application Submitted!</h2>
-          <p className="text-gray-400 mb-6">Your gold loan application has been successfully recorded.</p>
-
-          <div className="bg-gray-800/60 rounded-xl p-5 text-left mb-6 space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Application ID</span>
-              <span className="text-amber-400 font-mono text-sm font-bold">{submitResult.applicationId}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Customer</span>
-              <span className="text-white">{submitResult.customerName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Pure Gold Weight</span>
-              <span className="text-white">{submitResult.pureGoldWeightGrams.toFixed(2)}g</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Selected Plan</span>
-              <span className="text-white">{submitResult.selectedPlan.name}</span>
-            </div>
-            <hr className="border-gray-700" />
-            <div className="flex justify-between items-center">
-              <span className="text-gray-400 font-semibold">Eligible Loan Amount</span>
-              <span className="text-2xl font-black text-amber-400">
-                {formatCurrency(submitResult.maxEligibleLoanAmount)}
-              </span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleNewApplication}
-            className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 text-gray-900 font-bold rounded-xl hover:from-amber-400 hover:to-yellow-300 transition-all duration-200 shadow-lg shadow-amber-500/20"
-          >
-            Submit Another Application
-          </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
